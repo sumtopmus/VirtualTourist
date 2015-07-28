@@ -3,7 +3,7 @@
 //  VirtualTouristTests
 //
 //  Created by Oleksandr Iaroshenko on 28.07.15.
-//  Copyright (c) 2015 theconquerorkh. All rights reserved.
+//  Copyright (c) 2015 Oleksandr Iaroshenko. All rights reserved.
 //
 
 import UIKit
