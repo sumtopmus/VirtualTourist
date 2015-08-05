@@ -20,7 +20,7 @@ class FlickrAPI {
     // MARK: - Public API Access
 
     // Returns random page (<=100 photos)
-    func searchPhotosByCoordinates(#latitude: Double, longitude: Double, completion: ((photos: [FlickrPhoto]) -> Void)?) {
+    func searchPhotosByCoordinates(#latitude: Double, longitude: Double, completion: ((photos: [Photo]) -> Void)?) {
         var parameters = Defaults.GetPhotosParameters
         parameters[HTTPKeys.BoundingBox] = constructBoundingBoxParameterFromLatitude(latitude, andLongitude: longitude)
 
@@ -59,24 +59,25 @@ class FlickrAPI {
         if let dataDictionary = data as? [String : AnyObject],
             photos = dataDictionary[JSONKeys.Photos] as? [String : AnyObject],
             pagesCount = photos[JSONKeys.PagesCount] as? Int,
-            photosCount = photos[JSONKeys.PhotosCount] as? Int {
-                result.pagesCount = pagesCount
-                result.photosCount = photosCount
+            photosCount = (photos[JSONKeys.PhotosCount] as? String)?.toInt() {
+            result.pagesCount = pagesCount
+            result.photosCount = photosCount
         }
         
         return result
     }
 
-    private func parsePhotosWithJSONData(data: AnyObject?) -> [FlickrPhoto] {
-        var result = [FlickrPhoto]()
+    private func parsePhotosWithJSONData(data: AnyObject?) -> [Photo] {
+        var result = [Photo]()
 
         if let dataDictionary = data as? [String : AnyObject],
             photos = dataDictionary[JSONKeys.Photos] as? [String : AnyObject],
             photoArray = photos[JSONKeys.PhotoArray] as? [[String : AnyObject]] {
             for photo in photoArray {
-                if let title = photo[JSONKeys.Title] as? String,
+                if let id = photo[JSONKeys.ID] as? String,
+                    title = photo[JSONKeys.Title] as? String,
                     url = photo[JSONKeys.URL] as? String {
-                        result.append(FlickrPhoto(title: title, urlString: url))
+                        result.append(Photo(context: CoreDataManager.sharedInstance.nonPersistantContext, id: id, title: title, url: url))
                 }
             }
         }
@@ -86,7 +87,7 @@ class FlickrAPI {
 
     // MARK: - Auxiliary methods
 
-    private func searchPhotosAndPickRandomPage(var #parameters: [String : String], completion: ((photos: [FlickrPhoto]) -> Void)?) {
+    private func searchPhotosAndPickRandomPage(var #parameters: [String : String], completion: ((photos: [Photo]) -> Void)?) {
         let request = createRequest(parameters)
         performRequest(request) { jsonData in
             let count = self.parsePhotosArrayMetadataWithJSONData(jsonData)
@@ -96,8 +97,6 @@ class FlickrAPI {
             parameters[HTTPKeys.Page] = "\(randomPageindex)"
 
             self.performRequest(self.createRequest(parameters)) { jsonData in
-                println("Log: In searchPhotosAndPickRandomPage method, jsonData is obtained.")
-
                 let photos = self.parsePhotosWithJSONData(jsonData)
                 completion?(photos: photos)
             }
@@ -125,6 +124,7 @@ extension FlickrAPI {
         static let APIKey = "api_key"
         static let Text = "text"
         static let BoundingBox = "bbox"
+        static let PerPage = "per_page"
         static let Page = "page"
         static let GalleryID = "gallery_id"
         static let Extras = "extras"
@@ -145,6 +145,7 @@ extension FlickrAPI {
         static let PagesCount = "pages"
         static let PhotosCount = "total"
         static let PhotoArray = "photo"
+        static let ID = "id"
         static let Title = "title"
         static let URL = "url_m"
     }
@@ -160,7 +161,8 @@ extension FlickrAPI {
             HTTPKeys.SafeSearch : Defaults.SafeSearch,
             HTTPKeys.Extras : Defaults.Extras,
             HTTPKeys.Format : Defaults.Format,
-            HTTPKeys.NoJSONCallback : Defaults.NoJSONCallback
+            HTTPKeys.NoJSONCallback : Defaults.NoJSONCallback,
+            HTTPKeys.PerPage : "\(Defaults.PhotosOnPage)"
         ]
 
         static let SafeSearch = "1"
@@ -171,7 +173,7 @@ extension FlickrAPI {
         static let BoundingBoxHalfSize = 0.1
 
         static let MaxPhotosCount = 4000
-        static let MaxPagesCount = 40
-        static let PhotosOnPage = 100
+        static let PhotosOnPage = 40
+        static let MaxPagesCount = MaxPhotosCount / PhotosOnPage
     }
 }

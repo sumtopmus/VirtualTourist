@@ -24,7 +24,11 @@ class ImageCache {
         static let CachesAbsolutePath: String = {
             let cachesMainDirectory = NSSearchPathForDirectoriesInDomains(.CachesDirectory, .UserDomainMask, true).first as! String
             let absolutePath = cachesMainDirectory.stringByAppendingPathComponent(Defaults.CachesRelativeDirectory)
+            if !NSFileManager.defaultManager().fileExistsAtPath(absolutePath) {
+                NSFileManager.defaultManager().createDirectoryAtPath(absolutePath, withIntermediateDirectories: false, attributes: nil, error: nil)
+            }
 
+            println(absolutePath)
             return absolutePath
         }()
     }
@@ -33,17 +37,21 @@ class ImageCache {
 
     private var cache = NSCache()
 
+    private var identifiers = Set<String>()
+
     // MARK: - Public methods
 
     func addImageWithIdentifier(image: UIImage?, identifier: String) {
-        let path = pathForIdentifier(identifier)
+        let path = ImageCache.pathForIdentifier(identifier)
 
         if let image = image {
             cache.setObject(image, forKey: identifier)
             UIImagePNGRepresentation(image).writeToFile(path, atomically: true)
+            identifiers.insert(identifier)
         } else {
             cache.removeObjectForKey(path)
             NSFileManager.defaultManager().removeItemAtPath(path, error: nil)
+            identifiers.remove(identifier)
         }
     }
 
@@ -54,9 +62,13 @@ class ImageCache {
             if let image = cache.objectForKey(identifier) as? UIImage {
                 result = image
             } else {
-                let path = pathForIdentifier(identifier)
+                let path = ImageCache.pathForIdentifier(identifier)
                 if let data = NSData(contentsOfFile: path) {
                     result = UIImage(data: data)
+                    if result != nil {
+                        cache.setObject(result!, forKey: identifier)
+                        identifiers.insert(identifier)
+                    }
                 }
             }
         }
@@ -64,9 +76,17 @@ class ImageCache {
         return result
     }
 
-    // MARK: - Auxiliary private methods
+    func removeAllImagesFromMemoryAndDisk() {
+        for identifier in identifiers {
+            let path = ImageCache.pathForIdentifier(identifier)
+            NSFileManager.defaultManager().removeItemAtPath(path, error: nil)
+        }
+        cache.removeAllObjects()
+    }
 
-    func pathForIdentifier(identifier: String) -> String {
-        return Defaults.CachesAbsolutePath.stringByAppendingPathComponent(identifier)
+    // MARK: - Auxiliary methods
+
+    class func pathForIdentifier(identifier: String) -> String {
+        return Defaults.CachesAbsolutePath.stringByAppendingPathComponent(identifier) + Defaults.ImageExtension
     }
 }

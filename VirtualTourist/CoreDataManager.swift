@@ -24,30 +24,29 @@ class CoreDataManager {
 
     // MARK: - Core Data stack
 
-    var context: NSManagedObjectContext?
+    var context = NSManagedObjectContext()
+    var nonPersistantContext = NSManagedObjectContext()
 
     private init() {
         let modelURL = NSBundle.mainBundle().URLForResource(Defaults.Model, withExtension: Defaults.ModelExtension)!
+        print(modelURL)
         let managedObjectModel = NSManagedObjectModel(contentsOfURL: modelURL)!
         let coordinator = NSPersistentStoreCoordinator(managedObjectModel: managedObjectModel)
 
         let documentsDirURL = NSFileManager.defaultManager().URLsForDirectory(NSSearchPathDirectory.DocumentDirectory, inDomains: NSSearchPathDomainMask.UserDomainMask).first as! NSURL
         let sqlBaseURL = documentsDirURL.URLByAppendingPathComponent(Defaults.SQLBase)
 
-        if let storeAdded = coordinator.addPersistentStoreWithType(NSSQLiteStoreType, configuration: nil, URL: sqlBaseURL, options: nil, error: NSErrorPointer()) {
-
-            context = NSManagedObjectContext()
-            context!.persistentStoreCoordinator = coordinator
+        if let storeAdded = coordinator.addPersistentStoreWithType(NSSQLiteStoreType, configuration: nil, URL: sqlBaseURL, options: nil, error: nil) {
+            context.persistentStoreCoordinator = coordinator
+            nonPersistantContext.persistentStoreCoordinator = coordinator
         }
     }
 
     // MARK: - Core Data saving support
     
     func saveContext () {
-        if let context = context {
-            if context.hasChanges && !context.save(NSErrorPointer()) {
-                println("Log: Changes were not saved to disk.")
-            }
+        if context.hasChanges && !context.save(nil) {
+            println("Log: Changes were not saved to disk.")
         }
     }
 }
