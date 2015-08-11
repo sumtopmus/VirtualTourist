@@ -27,8 +27,8 @@ class ImageCache {
             if !NSFileManager.defaultManager().fileExistsAtPath(absolutePath) {
                 NSFileManager.defaultManager().createDirectoryAtPath(absolutePath, withIntermediateDirectories: false, attributes: nil, error: nil)
             }
-
             println(absolutePath)
+            println()
             return absolutePath
         }()
     }

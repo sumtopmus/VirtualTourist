@@ -17,14 +17,48 @@ class FlickrAPI {
     private init() {
     }
 
+    // MARK: - Internal structure
+
+    private var lastLatitude: Double!
+    private var lastLongitude: Double!
+    private var pageToSearch: Int!
+
+    private var lastPage: Int!
+
     // MARK: - Public API Access
 
-    // Returns random page (<=100 photos)
-    func searchPhotosByCoordinates(#latitude: Double, longitude: Double, completion: ((photos: [Photo]) -> Void)?) {
+    // Returns random page
+    func searchRandomPhotosByCoordinates(#latitude: Double, longitude: Double, completion: ((photos: [Photo]) -> Void)?) {
         var parameters = Defaults.GetPhotosParameters
         parameters[HTTPKeys.BoundingBox] = constructBoundingBoxParameterFromLatitude(latitude, andLongitude: longitude)
 
         searchPhotosAndPickRandomPage(parameters: parameters, completion: completion)
+    }
+
+    // Returns first page
+    func searchPhotosByCoordinates(#latitude: Double, longitude: Double, completion: ((photos: [Photo]) -> Void)?) {
+        lastLatitude = latitude
+        lastLongitude = longitude
+        pageToSearch = 1
+        lastPage = 1
+
+        getNextPage(completion)
+    }
+
+    // Returns next page
+    func getNextPage(completion: ((photos: [Photo]) -> Void)?) {
+        if pageToSearch != nil && pageToSearch <= lastPage {
+            var parameters = Defaults.GetPhotosParameters
+            parameters[HTTPKeys.BoundingBox] = constructBoundingBoxParameterFromLatitude(lastLatitude, andLongitude: lastLongitude)
+            parameters[HTTPKeys.Page] = "\(pageToSearch)"
+
+            self.performRequest(self.createRequest(parameters)) { jsonData in
+                let photos = self.parsePhotosWithJSONData(jsonData)
+                completion?(photos: photos)
+            }
+        } else {
+            completion?(photos: [])
+        }
     }
 
     // MARK: - Internal API Access (HTTP Requests)
@@ -72,7 +106,9 @@ class FlickrAPI {
 
         if let dataDictionary = data as? [String : AnyObject],
             photos = dataDictionary[JSONKeys.Photos] as? [String : AnyObject],
+            pagesCount = photos[JSONKeys.PagesCount] as? Int,
             photoArray = photos[JSONKeys.PhotoArray] as? [[String : AnyObject]] {
+            lastPage = pagesCount
             for photo in photoArray {
                 if let id = photo[JSONKeys.ID] as? String,
                     title = photo[JSONKeys.Title] as? String,

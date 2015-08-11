@@ -10,19 +10,20 @@ import UIKit
 import CoreData
 import MapKit
 
-class EditPinViewController: UIViewController, UICollectionViewDataSource, UICollectionViewDelegate, NSFetchedResultsControllerDelegate {
+class EditPinViewController: UIViewController {
 
     // MARK: - Magic values
 
     private struct Defaults {
-        static let ImageCellReuseIdentifier = "ImageCollectionViewCell"
         static let PredicateFormat = "pin == %@"
 
-        static let StandardAlpha: CGFloat = 1.0
-        static let RemovedAlpha: CGFloat = 0.1
+        static let SwitchDuration: NSTimeInterval = 1.0
 
         static let EditCollection = "Edit Collection"
+        static let DoneEditing = "Done Editing"
+        static let AddPhotos = "Add Photos"
         static let RemovePhotos = "Remove Photos"
+        static let GoBack = "Go Back"
 
         static let UnwindSegue = "Unwind Segue"
     }
@@ -31,30 +32,29 @@ class EditPinViewController: UIViewController, UICollectionViewDataSource, UICol
         static let NumberOfPhotosInRow: CGFloat = 5
     }
 
+    // MARK: - Internal types
+
+    private enum State {
+        case Showing, Adding, Editing
+    }
+
     // MARK: - Properties
 
-    var pin: Pin!
+    var pin: Pin! {
+        didSet {
+            temporaryPinCopy = Pin(context: CoreDataManager.sharedInstance.context, latitude: Double(pin.latitude), longitude: Double(pin.longitude))
+        }
+    }
 
-    private var photosController: NSFetchedResultsController!
+    private var temporaryPinCopy: Pin!
 
-    private var selectedIndexes = [NSIndexPath]()
+    private var showImagesController: ShowImagesController!
+    private var addImagesController: AddImagesController!
 
-    private var insertedIndexes: [NSIndexPath]!
-    private var updatedIndexes: [NSIndexPath]!
-    private var deletedIndexes: [NSIndexPath]!
+    private var showCollectionLayout: UICollectionViewFlowLayout!
+    private var addCollectionLayout: UICollectionViewFlowLayout!
 
-    private var isEditingPhotos = false
-
-    // MARK: - Geomerty and layout
-
-    private var layout: UICollectionViewFlowLayout = {
-        var layout = UICollectionViewFlowLayout()
-        layout.sectionInset = UIEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
-        layout.minimumLineSpacing = 0
-        layout.minimumInteritemSpacing = 0
-
-        return layout
-    }()
+    private var state = State.Showing
 
     // MARK: - Actions and Outlets
 
@@ -68,181 +68,118 @@ class EditPinViewController: UIViewController, UICollectionViewDataSource, UICol
         }
     }
 
-    @IBOutlet weak var collectionView: UICollectionView! {
-        didSet {
-            collectionView.dataSource = self
-            collectionView.delegate = self
-        }
-    }
+    @IBOutlet weak var embeddingView: UIView!
+    @IBOutlet weak var showCollectionView: UICollectionView!
+    @IBOutlet weak var addCollectionView: UICollectionView!
 
     @IBAction func deletePin() {
         CoreDataManager.sharedInstance.context.deleteObject(pin)
         performSegueWithIdentifier(Defaults.UnwindSegue, sender: self)
     }
 
-    @IBOutlet weak var editRemoveBottomButton: UIButton!
-        {
-        didSet {
-            editRemoveBottomButton.setTitle(Defaults.EditCollection, forState: UIControlState.Normal)
+    @IBOutlet weak var editButton: UIButton!
+    @IBAction func editPhotos(sender: UIButton) {
+        switch state {
+        case .Showing:
+            state = .Editing
+            editButton.setTitle(Defaults.DoneEditing, forState: UIControlState.Normal)
+            addButton.setTitle(Defaults.RemovePhotos, forState: UIControlState.Normal)
+            showImagesController.canSelectPhotos = true
+        case .Editing:
+            resetState()
+        case .Adding:
+            switchCollections()
+            resetState()
         }
     }
 
-    @IBAction func editRemovePhotos(sender: UIButton) {
-        isEditingPhotos = !isEditingPhotos
-        if isEditingPhotos {
-            editRemoveBottomButton.setTitle(Defaults.RemovePhotos, forState: UIControlState.Normal)
-        } else {
-            editRemoveBottomButton.setTitle(Defaults.EditCollection, forState: UIControlState.Normal)
+    @IBOutlet weak var addButton: UIButton!
+    @IBAction func addPhotos(sender: UIButton) {
+        switch state {
+        case .Showing:
+            state = .Adding
+            editButton.setTitle(Defaults.GoBack, forState: UIControlState.Normal)
+            addButton.setTitle(Defaults.AddPhotos, forState: UIControlState.Normal)
+            switchCollections()
+            fetchPhotosFromFlickr()
+        case .Editing:
             removePhotos()
+        case .Adding:
+            addPhotos()
+            switchCollections()
+            resetState()
         }
     }
-
-    // MARK: - NSFetchResultsControllerDelegate methods
-
-    func controllerWillChangeContent(controller: NSFetchedResultsController) {
-        insertedIndexes = [NSIndexPath]()
-        updatedIndexes = [NSIndexPath]()
-        deletedIndexes = [NSIndexPath]()
-    }
-
-    func controller(controller: NSFetchedResultsController, didChangeObject object: AnyObject, atIndexPath indexPath: NSIndexPath?, forChangeType type: NSFetchedResultsChangeType, newIndexPath: NSIndexPath?) {
-        switch type {
-        case .Insert:
-            insertedIndexes.append(newIndexPath!)
-        case .Update:
-            updatedIndexes.append(indexPath!)
-        case .Delete:
-            deletedIndexes.append(indexPath!)
-        default:
-            return
-        }
-    }
-
-    func controllerDidChangeContent(controller: NSFetchedResultsController) {
-        collectionView.performBatchUpdates({
-            for indexPath in self.insertedIndexes {
-                self.collectionView.insertItemsAtIndexPaths([indexPath])
-            }
-            for indexPath in self.updatedIndexes {
-                self.collectionView.reloadItemsAtIndexPaths([indexPath])
-            }
-            for indexPath in self.deletedIndexes {
-                self.collectionView.deleteItemsAtIndexPaths([indexPath])
-            }
-        }, completion: nil)
-    }
-
-    // MARK: - UICollectionView data source
-
-    func numberOfSectionsInCollectionView(collectionView: UICollectionView) -> Int {
-        return self.photosController?.sections?.count ?? 0
-    }
-
-    func collectionView(collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
-        let sectionInfo = photosController?.sections?[section] as? NSFetchedResultsSectionInfo
-        return sectionInfo?.numberOfObjects ?? 0
-    }
-
-    func collectionView(collectionView: UICollectionView, cellForItemAtIndexPath indexPath: NSIndexPath) -> UICollectionViewCell {
-        let cell = collectionView.dequeueReusableCellWithReuseIdentifier(Defaults.ImageCellReuseIdentifier, forIndexPath: indexPath) as! ImageCollectionViewCell
-
-        if let index = find(selectedIndexes, indexPath) {
-            cell.imageView.alpha = Defaults.RemovedAlpha
-        } else {
-            cell.imageView.alpha = Defaults.StandardAlpha
-        }
-        let photo = photosController!.objectAtIndexPath(indexPath) as! Photo
-        if cell.photo != photo {
-            cell.imageView.image = nil
-            cell.photo = photo
-        }
-
-        return cell
-    }
-
-    // MARK: - UICollectionView delegate
-
-    func collectionView(collectionView: UICollectionView, didSelectItemAtIndexPath indexPath: NSIndexPath) {
-        if isEditingPhotos {
-            let cell = collectionView.cellForItemAtIndexPath(indexPath) as! ImageCollectionViewCell
-
-            if let index = find(selectedIndexes, indexPath) {
-                selectedIndexes.removeAtIndex(index)
-                cell.imageView.alpha = Defaults.StandardAlpha
-            } else {
-                selectedIndexes.append(indexPath)
-                cell.imageView.alpha = Defaults.RemovedAlpha
-            }
-        }
-    }
-
-    /*
-    // Uncomment this method to specify if the specified item should be highlighted during tracking
-    override func collectionView(collectionView: UICollectionView, shouldHighlightItemAtIndexPath indexPath: NSIndexPath) -> Bool {
-    return true
-    }
-    */
-
-    /*
-    // Uncomment this method to specify if the specified item should be selected
-    override func collectionView(collectionView: UICollectionView, shouldSelectItemAtIndexPath indexPath: NSIndexPath) -> Bool {
-    return true
-    }
-    */
-
-    /*
-    // Uncomment these methods to specify if an action menu should be displayed for the specified item, and react to actions performed on the item
-    override func collectionView(collectionView: UICollectionView, shouldShowMenuForItemAtIndexPath indexPath: NSIndexPath) -> Bool {
-    return false
-    }
-
-    override func collectionView(collectionView: UICollectionView, canPerformAction action: Selector, forItemAtIndexPath indexPath: NSIndexPath, withSender sender: AnyObject?) -> Bool {
-    return false
-    }
-
-    override func collectionView(collectionView: UICollectionView, performAction action: Selector, forItemAtIndexPath indexPath: NSIndexPath, withSender sender: AnyObject?) {
-
-    }
-    */
-
 
     // MARK: - Auxiliary methods
 
-    private func setPhotosController() {
-        let fetchRequest = NSFetchRequest(entityName: Photo.Entity.Name)
-        fetchRequest.sortDescriptors = [NSSortDescriptor(key: Photo.Entity.SortingField, ascending: false)]
-        fetchRequest.predicate = NSPredicate(format: Defaults.PredicateFormat, pin!)
+    private func resetState() {
+        state = .Showing
+        showImagesController.canSelectPhotos = false
+        editButton.setTitle(Defaults.EditCollection, forState: UIControlState.Normal)
+        addButton.setTitle(Defaults.AddPhotos, forState: UIControlState.Normal)
+    }
 
-        photosController =  NSFetchedResultsController(fetchRequest: fetchRequest, managedObjectContext: CoreDataManager.sharedInstance.context, sectionNameKeyPath: nil, cacheName: nil)
-        photosController?.delegate = self
+    private func createLayout() -> UICollectionViewFlowLayout {
+        var layout = UICollectionViewFlowLayout()
+        layout.sectionInset = UIEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
+        layout.minimumLineSpacing = 0
+        layout.minimumInteritemSpacing = 0
+
+        return layout
+    }
+
+    private func getPhotosControllerForPin(pin: Pin) -> NSFetchedResultsController {
+        let fetchRequest = NSFetchRequest(entityName: Photo.Entity.Name)
+        fetchRequest.sortDescriptors = [NSSortDescriptor(key: Photo.Entity.SortingField, ascending: true)]
+        fetchRequest.predicate = NSPredicate(format: Defaults.PredicateFormat, pin)
+
+        var controller =  NSFetchedResultsController(fetchRequest: fetchRequest, managedObjectContext: CoreDataManager.sharedInstance.context, sectionNameKeyPath: nil, cacheName: nil)
+
+        return controller
     }
 
     private func addPinToMapView() {
-        mapView?.addAnnotation(pin!)
-        mapView?.showAnnotations([pin!], animated: false)
+        mapView?.addAnnotation(pin)
+        mapView?.showAnnotations([pin], animated: false)
     }
 
     private func fetchPhotosFromFlickr() {
         FlickrAPI.sharedInstance.searchPhotosByCoordinates(latitude: pin.latitude.doubleValue, longitude: pin.longitude.doubleValue) { photos in
             dispatch_async(dispatch_get_main_queue()) {
                 for photo in photos {
-                    let persistentPhoto = Photo(context: CoreDataManager.sharedInstance.context, id: photo.id, title: photo.title, url: photo.url)
-                    persistentPhoto.pin = self.pin
+                    let temporaryPhoto = Photo(context: CoreDataManager.sharedInstance.context, id: photo.id, title: photo.title, url: photo.url)
+                    temporaryPhoto.pin = self.temporaryPinCopy
                 }
                 CoreDataManager.sharedInstance.saveContext()
-
-                self.collectionView.reloadData()
             }
         }
     }
 
-    private func removePhotos() {
-        for index in selectedIndexes {
-            CoreDataManager.sharedInstance.context.deleteObject(photosController.objectAtIndexPath(index) as! Photo)
+    private func addPhotos() {
+        for photo in addImagesController.selectedPhotos() {
+            let persistentPhoto = Photo(context: CoreDataManager.sharedInstance.context, id: photo.id, title: photo.title, url: photo.url)
+            persistentPhoto.pin = pin
         }
         CoreDataManager.sharedInstance.saveContext()
+    }
 
-        selectedIndexes = []
+    private func removePhotos() {
+        for photo in showImagesController.selectedPhotos() {
+            CoreDataManager.sharedInstance.context.deleteObject(photo)
+        }
+        CoreDataManager.sharedInstance.saveContext()
+    }
+
+    private func switchCollections() {
+        UIView.beginAnimations(nil, context: nil)
+        UIView.setAnimationTransition(UIViewAnimationTransition.FlipFromLeft, forView: embeddingView, cache: true)
+        UIView.setAnimationCurve(UIViewAnimationCurve.EaseInOut)
+        UIView.setAnimationDuration(Defaults.SwitchDuration)
+        showImagesController.unselectAll()
+        addImagesController.unselectAll()
+        embeddingView.exchangeSubviewAtIndex(0, withSubviewAtIndex: 1)
+        UIView.commitAnimations()
     }
 
     // MARK: - Lifecycle methods
@@ -250,15 +187,21 @@ class EditPinViewController: UIViewController, UICollectionViewDataSource, UICol
     override func viewDidLoad() {
         super.viewDidLoad()
 
-        collectionView.collectionViewLayout = layout
+        showCollectionLayout = createLayout()
+        showCollectionView.collectionViewLayout = showCollectionLayout
+        addCollectionLayout = createLayout()
+        addCollectionView.collectionViewLayout = addCollectionLayout
 
         if pin != nil {
-            setPhotosController()
-            photosController?.performFetch(nil)
+            let showPhotosFetchedResultsController = getPhotosControllerForPin(pin)
+            showImagesController = ShowImagesController(collectionView: showCollectionView, photosController: showPhotosFetchedResultsController)
+
+            let addPhotosFetchedResultsController = getPhotosControllerForPin(temporaryPinCopy)
+            addImagesController = AddImagesController(collectionView: addCollectionView, photosController: addPhotosFetchedResultsController)
+            addImagesController.canSelectPhotos = true
+
             addPinToMapView()
-            if pin.photos.isEmpty {
-                fetchPhotosFromFlickr()
-            }
+            resetState()
         }
     }
 
@@ -269,13 +212,14 @@ class EditPinViewController: UIViewController, UICollectionViewDataSource, UICol
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
 
-        let width = floor(collectionView.frame.size.width / Layout.NumberOfPhotosInRow)
-        layout.itemSize = CGSize(width: width, height: width)
+        let width = floor(showCollectionView.frame.size.width / Layout.NumberOfPhotosInRow)
+        showCollectionLayout.itemSize = CGSize(width: width, height: width)
+        addCollectionLayout.itemSize = CGSize(width: width, height: width)
     }
 
     // MARK: - Navigation
 
     override func prepareForSegue(segue: UIStoryboardSegue, sender: AnyObject?) {
-
+        CoreDataManager.sharedInstance.context.deleteObject(temporaryPinCopy)
     }
 }

@@ -17,7 +17,7 @@ class Photo: NSManagedObject {
 
     struct Entity {
         static let Name = "Photo"
-        static let SortingField = "id"
+        static let SortingField = "timeStamp"
     }
 
     // MARK: - Cache
@@ -29,6 +29,8 @@ class Photo: NSManagedObject {
     @NSManaged var id: String
     @NSManaged var title: String
     @NSManaged var url: String
+
+    @NSManaged var timeStamp: NSDate
 
     @NSManaged var pin: Pin?
 
@@ -45,6 +47,8 @@ class Photo: NSManagedObject {
         self.id = id
         self.title = title
         self.url = url
+
+        self.timeStamp = NSDate()
     }
 
     // MARK: - Methods

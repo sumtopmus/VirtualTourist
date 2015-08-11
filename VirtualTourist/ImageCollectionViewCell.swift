@@ -10,6 +10,10 @@ import UIKit
 
 class ImageCollectionViewCell: UICollectionViewCell {
 
+    // MARK: - Magic values
+
+    static let ReuseIdentifier = "ImageCollectionViewCell"
+
     // MARK: - Actions and Outlets
 
     @IBOutlet weak var imageView: UIImageView! {

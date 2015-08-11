@@ -29,7 +29,8 @@ class CoreDataManager {
 
     private init() {
         let modelURL = NSBundle.mainBundle().URLForResource(Defaults.Model, withExtension: Defaults.ModelExtension)!
-        print(modelURL)
+        println(modelURL)
+        println()
         let managedObjectModel = NSManagedObjectModel(contentsOfURL: modelURL)!
         let coordinator = NSPersistentStoreCoordinator(managedObjectModel: managedObjectModel)
 
